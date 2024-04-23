@@ -11,6 +11,11 @@ Pair :: struct {
     l, r: string,
 }
 
+Highest :: struct {
+    pair: Pair,
+    count: int,
+}
+
 main :: proc() {
     track: mem.Tracking_Allocator
     mem.tracking_allocator_init(&track, context.allocator)
@@ -43,16 +48,17 @@ main :: proc() {
     prev_highest_count := 0
 
     for it := 0; it < MAX_ITERATIONS; it += 1 {
-        highest_count_pair, highest_count := get_most_freq_pair(lines_of_slices, prev_highest_count)
+        highest, second_highest := get_2_most_freq_pairs(lines_of_slices, prev_highest_count)
 
-        fmt.printf("%d Highest count is %v\n", it, highest_count)
-        if highest_count < 2 { break }
+        fmt.printf("%d Highest 2 counts are %v and %v\n", it, highest.count, second_highest.count)
+        if highest.count < 2 { break }
+        if second_highest.count < 2 { break }
 
-        fmt.printf("%d Most frequent pair is %v\n", it, highest_count_pair)
+        fmt.printf("%d Most frequent 2 pairs are %v and %v\n", it, highest.pair, second_highest.pair)
 
-        bmp_merge(&lines_of_slices, highest_count_pair)
+        bmp_merge(&lines_of_slices, highest.pair, second_highest.pair)
 
-        prev_highest_count = highest_count
+        prev_highest_count = highest.count
     }
 
     ansi_print_lines(lines_of_slices)
@@ -117,41 +123,54 @@ tokenize_text :: proc(big_text: string) -> [dynamic][dynamic]string {
     return lines_of_slices
 }
 
-get_most_freq_pair :: proc(lines_of_slices: [dynamic][dynamic]string, prev_highest_count: int) -> (Pair, int) {
+get_2_most_freq_pairs :: proc(lines_of_slices: [dynamic][dynamic]string, prev_highest_count: int) -> (Highest, Highest) {
     fmt.println("Counting pairs...")
     countmap := make(map[Pair]int)
     defer delete(countmap)
 
-    highest_count := 0
-    highest_count_pair : Pair
+    highest, second_highest : Highest
 
     for line in lines_of_slices {
         for i := 0; i < len(line) - 1; i += 1 {
             pair := Pair{line[i], line[i+1]}
             count := countmap[pair] + 1
             countmap[pair] = count
-            if count > highest_count {
-                highest_count = count
-                highest_count_pair = pair
+            if count > highest.count {
+                if pair == highest.pair || pair == second_highest.pair {
+                    continue
+                }
+                second_highest = highest
+                highest = Highest{pair, count}
 
                 // if there's a previous most common pair and our most common pair is
                 // equal to or greater than it, then we're done
-                if prev_highest_count > 0 && highest_count >= prev_highest_count { break }
+                if prev_highest_count > 0 && highest.count >= prev_highest_count { break }
+            } else if count > second_highest.count {
+                if pair == highest.pair || pair == second_highest.pair {
+                    continue
+                }
+                second_highest = Highest{pair, count}
             }
         }
     }
 
-    return highest_count_pair, highest_count
+    return highest, second_highest
 }
 
 // do a BPE "merge" by iterating over lines_of_pairs
 // and replacing every occurence of pair.1 followed by pair.2
 // with a pair starting in the same place but combining the lengths
-bmp_merge :: proc(lines_of_slices: ^[dynamic][dynamic]string, highest_count_pair: Pair) {
+bmp_merge :: proc(lines_of_slices: ^[dynamic][dynamic]string, highest_count_pair: Pair, second_highest_count_pair: Pair) {
     for &line in lines_of_slices {
         for i := 0; i < len(line) - 1; i += 1 {
             pair := Pair{line[i], line[i+1]}
             if pair == highest_count_pair {
+                line[i] = strings.string_from_ptr(
+                    raw_data(line[i]),
+                    len(line[i]) + len(line[i+1])
+                )
+                ordered_remove(&line, i+1)
+            } else if pair == second_highest_count_pair {
                 line[i] = strings.string_from_ptr(
                     raw_data(line[i]),
                     len(line[i]) + len(line[i+1])
