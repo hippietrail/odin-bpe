@@ -48,15 +48,18 @@ main :: proc() {
     prev_highest_count := 0
 
     for it := 0; it < MAX_ITERATIONS; it += 1 {
-        highest, second_highest := get_2_most_freq_pairs(lines_of_slices, prev_highest_count)
+        highest, second_highest, third_highest := get_3_most_freq_pairs(lines_of_slices, prev_highest_count)
 
-        fmt.printf("%d Highest 2 counts are %v and %v\n", it, highest.count, second_highest.count)
-        if highest.count < 2 { break }
-        if second_highest.count < 2 { break }
+        fmt.printf("%d Highest count is %d\n", it, highest.count)
+        if highest.count < 2 && second_highest.count < 2 && third_highest.count < 2 { break }
 
-        fmt.printf("%d Most frequent 2 pairs are %v and %v\n", it, highest.pair, second_highest.pair)
+        fmt.printf("%d Most frequent 3 pairs are '%s'-'%s', '%s'-'%s', and '%s'-'%s': %d, %d, %d\n", it,
+            highest.pair.l, highest.pair.r,
+            second_highest.pair.l, second_highest.pair.r,
+            third_highest.pair.l, third_highest.pair.r,
+            highest.count, second_highest.count, third_highest.count)
 
-        bmp_merge(&lines_of_slices, highest.pair, second_highest.pair)
+        bmp_merge(&lines_of_slices, highest.pair, second_highest.pair, third_highest.pair)
 
         prev_highest_count = highest.count
     }
@@ -123,12 +126,12 @@ tokenize_text :: proc(big_text: string) -> [dynamic][dynamic]string {
     return lines_of_slices
 }
 
-get_2_most_freq_pairs :: proc(lines_of_slices: [dynamic][dynamic]string, prev_highest_count: int) -> (Highest, Highest) {
+get_3_most_freq_pairs :: proc(lines_of_slices: [dynamic][dynamic]string, prev_highest_count: int) -> (Highest, Highest, Highest) {
     fmt.println("Counting pairs...")
     countmap := make(map[Pair]int)
     defer delete(countmap)
 
-    highest, second_highest : Highest
+    highest, second_highest, third_highest : Highest
 
     for line in lines_of_slices {
         for i := 0; i < len(line) - 1; i += 1 {
@@ -136,9 +139,10 @@ get_2_most_freq_pairs :: proc(lines_of_slices: [dynamic][dynamic]string, prev_hi
             count := countmap[pair] + 1
             countmap[pair] = count
             if count > highest.count {
-                if pair == highest.pair || pair == second_highest.pair {
+                if pair == highest.pair || pair == second_highest.pair || pair == third_highest.pair {
                     continue
                 }
+                third_highest = second_highest
                 second_highest = highest
                 highest = Highest{pair, count}
 
@@ -149,32 +153,29 @@ get_2_most_freq_pairs :: proc(lines_of_slices: [dynamic][dynamic]string, prev_hi
                 if pair == highest.pair || pair == second_highest.pair {
                     continue
                 }
+                third_highest = second_highest
                 second_highest = Highest{pair, count}
+            } else if count > third_highest.count {
+                if pair == highest.pair {
+                    continue
+                }
+                third_highest = Highest{pair, count}
             }
         }
     }
 
-    return highest, second_highest
+    return highest, second_highest, third_highest
 }
 
 // do a BPE "merge" by iterating over lines_of_pairs
 // and replacing every occurence of pair.1 followed by pair.2
 // with a pair starting in the same place but combining the lengths
-bmp_merge :: proc(lines_of_slices: ^[dynamic][dynamic]string, highest_count_pair: Pair, second_highest_count_pair: Pair) {
-    for &line in lines_of_slices {
+bmp_merge :: proc(lines_of_slices: ^[dynamic][dynamic]string, highest_count_pair: Pair, second_highest_count_pair: Pair, third_highest_count_pair: Pair) {
+    for &line, l in lines_of_slices {
         for i := 0; i < len(line) - 1; i += 1 {
             pair := Pair{line[i], line[i+1]}
-            if pair == highest_count_pair {
-                line[i] = strings.string_from_ptr(
-                    raw_data(line[i]),
-                    len(line[i]) + len(line[i+1])
-                )
-                ordered_remove(&line, i+1)
-            } else if pair == second_highest_count_pair {
-                line[i] = strings.string_from_ptr(
-                    raw_data(line[i]),
-                    len(line[i]) + len(line[i+1])
-                )
+            if pair == highest_count_pair || pair == second_highest_count_pair || pair == third_highest_count_pair {
+                line[i] = strings.string_from_ptr(raw_data(line[i]), len(line[i]) + len(line[i+1]))
                 ordered_remove(&line, i+1)
             }
         }
